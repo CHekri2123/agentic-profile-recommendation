@@ -20,12 +20,13 @@ if not REDIS_URL:
 try:
     client = pymongo.MongoClient(
         MONGO_URI,
-        tls=True,  # Enforce TLS
-        tlsAllowInvalidCertificates=True,  # Allow invalid certs (useful for testing)
-        maxPoolSize=50,  # Maximum connections in the pool
-        minPoolSize=10,  # Minimum connections to maintain
-        serverSelectionTimeoutMS=5000  # Timeout for server selection
+        maxPoolSize=50,
+        minPoolSize=10,
+        retryWrites=True,
+        serverSelectionTimeoutMS=5000,
+        tlsAllowInvalidCertificates=True  # 👈 Add this line
     )
+
     client.admin.command("ping")
     print("✅ Connected to MongoDB successfully!")
 except pymongo.errors.ServerSelectionTimeoutError as e:
