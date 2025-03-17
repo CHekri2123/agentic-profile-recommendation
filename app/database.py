@@ -2,6 +2,7 @@ import streamlit as st
 import pymongo
 import redis
 import json
+import ssl
 from functools import lru_cache
 
 # Load MongoDB & Redis Config from Streamlit Secrets
@@ -15,17 +16,21 @@ if not MONGO_URI:
 if not REDIS_URL:
     raise ValueError("❌ REDIS_URL is not set in Streamlit secrets!")
 
-# Initialize MongoDB Client
+# Initialize MongoDB Client with TLS 1.2 Fix
 try:
     client = pymongo.MongoClient(
         MONGO_URI,
+        tls=True,  # Enforce TLS
+        tlsAllowInvalidCertificates=True,  # Allow invalid certs (useful for testing)
         maxPoolSize=50,  # Maximum connections in the pool
         minPoolSize=10,  # Minimum connections to maintain
-        retryWrites=True,
         serverSelectionTimeoutMS=5000  # Timeout for server selection
     )
     client.admin.command("ping")
     print("✅ Connected to MongoDB successfully!")
+except pymongo.errors.ServerSelectionTimeoutError as e:
+    print(f"❌ MongoDB Server Selection Timeout: {e}")
+    raise e
 except pymongo.errors.ConnectionFailure as e:
     print(f"❌ Could not connect to MongoDB: {e}")
     raise e
@@ -183,4 +188,4 @@ def get_db_client():
         client.admin.command("ping")
         return client
     except pymongo.errors.ConnectionFailure:
-        return pymongo.MongoClient(MONGO_URI)
+        return pymongo.MongoClient(MONGO_URI, tls=True, tlsAllowInvalidCertificates=True)
