@@ -1,17 +1,14 @@
-# app/query_parser.py
 import requests
 import json
 import uuid
-import os
 import re
+import streamlit as st
 from typing import Optional, List, Dict
 from pydantic import BaseModel, ValidationError
-from dotenv import load_dotenv
-from app.database import save_user_profile  # ✅ Remove the dot
+from app.database import save_user_profile  # ✅ Removed the dot for consistency
 
-# Load environment variables
-load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# ✅ Use Streamlit's secret management
+GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
 class UserProfile(BaseModel):
     user_id: str
@@ -68,9 +65,6 @@ def parse_query_with_gemini(user_input: str) -> dict:
     
     if response.status_code == 200:
         data = response.json()
-
-        # 🔍 Debugging: Print raw API response
-        # print("🔹 Raw API Response:", json.dumps(data, indent=2))
 
         try:
             parsed_text = data["candidates"][0]["content"]["parts"][0].get("text", "")

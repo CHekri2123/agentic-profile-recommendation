@@ -1,14 +1,20 @@
-# app/query_generator.py
+import logging
 from typing import List, Dict
 
-def generate_search_query(user_profile: Dict) -> str:
+# Logging Configuration
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-    # Extract relevant information
+def generate_search_query(user_profile: Dict) -> str:
+    """Generates a structured search query based on the user profile."""
+
+    # Extract relevant information safely
     interests = user_profile.get("interests", []) or []
     preferences = user_profile.get("preferences", {}) or {}
     demographics = user_profile.get("demographics", {}) or {}
-    skills = demographics.get("skills", [])
-    industries = demographics.get("industries", [])
+
+    skills = demographics.get("skills", []) or []
+    industries = demographics.get("industries", []) or []
     
     # Build query components
     query_parts = []
@@ -18,12 +24,14 @@ def generate_search_query(user_profile: Dict) -> str:
         query_parts.append(" OR ".join(interests))
     
     # Add role if specified
-    if preferences.get("role"):
-        query_parts.append(preferences["role"])
+    role = preferences.get("role")
+    if role:
+        query_parts.append(role)
     
     # Add location if specified
-    if preferences.get("location"):
-        query_parts.append(preferences["location"])
+    location = preferences.get("location")
+    if location:
+        query_parts.append(location)
     
     # Add remote/hybrid preference
     if preferences.get("remote") is True:
@@ -33,13 +41,16 @@ def generate_search_query(user_profile: Dict) -> str:
     
     # Add skills
     if skills:
-        query_parts.append(" ".join(skills))  # No limit on skills
+        query_parts.append(" ".join(skills))
     
     # Add industries
     if industries:
-        query_parts.append(" ".join(industries))  # No limit on industries
-    
+        query_parts.append(" ".join(industries))
+
     # Combine all parts
-    query = " ".join(query_parts)
-    
-    return query
+    query = " ".join(query_parts).strip()
+
+    # Log the generated query
+    logger.info(f"Generated search query: {query}")
+
+    return query if query else "default search query"

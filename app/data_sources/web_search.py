@@ -1,7 +1,6 @@
 # app/data_sources/web_search.py
 import requests
-import os
-from dotenv import load_dotenv
+import streamlit as st
 from typing import List, Dict
 import json
 from bs4 import BeautifulSoup
@@ -10,8 +9,8 @@ import concurrent.futures
 from urllib.parse import urlparse
 import re
 
-load_dotenv()
-SERP_API_KEY = os.getenv("SERPAPI_KEY")
+
+SERP_API_KEY = st.secrets["SERPAPI_KEY"]
 
 def fetch_search_results(query: str, limit: int = 10) -> List[Dict]:
 

@@ -1,8 +1,6 @@
-# app/data_sources/manager.py
 from typing import List, Dict
 from .web_search import fetch_search_results
 from .interest_sources import fetch_books_data, fetch_movies_data
-
 
 def get_data_sources_for_interests(interests: List[str]) -> List[str]:
     """Map user interests to appropriate data sources."""
@@ -13,12 +11,14 @@ def get_data_sources_for_interests(interests: List[str]) -> List[str]:
         # Add more mappings as needed
     }
     
-    active_sources = []
-    for source, related_interests in source_mapping.items():
-        if any(interest.lower() in [ri.lower() for ri in related_interests] for interest in interests):
-            active_sources.append(source)
+    active_sources = set()  # Use set to avoid duplicates
+    interests_lower = [interest.lower() for interest in interests]  # Convert to lowercase for case-insensitive matching
     
-    return active_sources
+    for source, related_interests in source_mapping.items():
+        if any(ri.lower() in interests_lower for ri in related_interests):
+            active_sources.add(source)
+    
+    return list(active_sources)
 
 def fetch_from_all_sources(query: str, user_profile: Dict) -> List[Dict]:
     """
@@ -37,8 +37,13 @@ def fetch_from_all_sources(query: str, user_profile: Dict) -> List[Dict]:
     web_results = fetch_search_results(query, limit=10)
     all_results.extend(web_results)
     
-    # Fetch from interest-specific sources
+    # Extract user interests safely
     interests = user_profile.get("interests", [])
+    if not isinstance(interests, list):
+        print("⚠️ Warning: 'interests' field in user profile is not a list. Defaulting to empty list.")
+        interests = []
+    
+    # Get active sources based on interests
     active_sources = get_data_sources_for_interests(interests)
     
     if "books" in active_sources:
@@ -63,7 +68,7 @@ def test_manager_functionality():
     """
     # Dummy user profile with interests in movies and books
     user_profile = {
-        "interests": ["AI", "movies", "books"],
+        "interests": ["AI", "Movies", "books"],  # Mixed case to test case-insensitive matching
         "preferences": {
             "role": "Data Scientist",
             "location": "San Francisco",
@@ -77,12 +82,12 @@ def test_manager_functionality():
     
     # Dummy query
     query = "Generative AI"
-    print(f"Testing with query: '{query}'")
+    print(f"\n🔍 Testing with query: '{query}'")
     
     # Get active sources based on interests
     interests = user_profile.get("interests", [])
     active_sources = get_data_sources_for_interests(interests)
-    print(f"Active sources based on interests: {active_sources}")
+    print(f"✅ Active sources based on interests: {active_sources}")
     
     # Fetch results from all sources
     results = fetch_from_all_sources(query, user_profile)
@@ -90,14 +95,12 @@ def test_manager_functionality():
     # Group results by source
     sources = {}
     for result in results:
-        source = result.get('source')
-        if source not in sources:
-            sources[source] = 0
-        sources[source] += 1
+        source = result.get('source', 'unknown')
+        sources[source] = sources.get(source, 0) + 1
     
     # Print summary
-    print(f"\nTotal results fetched: {len(results)}")
-    print("\nResults by source:")
+    print(f"\n📊 Total results fetched: {len(results)}")
+    print("\n📌 Results breakdown by source:")
     for source, count in sources.items():
         print(f"- {source}: {count} results")
     
@@ -107,6 +110,6 @@ def test_manager_functionality():
         "results": results
     }
 
-# You can call this function if the file is run directly
+# Run test if the script is executed directly
 if __name__ == "__main__":
     test_manager_functionality()

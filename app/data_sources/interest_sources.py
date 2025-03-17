@@ -1,15 +1,17 @@
-# app/data_sources/interest_sources.py
 import requests
-import os
-from dotenv import load_dotenv
-from typing import List, Dict
+import streamlit as st
+from typing import List, Dict, Optional
 
-load_dotenv()
-BOOKS_API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY")
-MOVIES_API_KEY = os.getenv("TMDB_API_KEY")
+BOOKS_API_KEY = st.secrets["GOOGLE_BOOKS_API_KEY"]
+MOVIES_API_KEY = st.secrets["TMDB_API_KEY"]
 
 def fetch_books_data(query: str, limit: int = 5) -> List[Dict]:
     """Fetch book recommendations from Google Books API."""
+    
+    if not BOOKS_API_KEY:
+        print("⚠️ Missing Google Books API Key. Skipping book fetch.")
+        return []
+    
     url = "https://www.googleapis.com/books/v1/volumes"
     
     params = {
@@ -19,7 +21,8 @@ def fetch_books_data(query: str, limit: int = 5) -> List[Dict]:
     }
     
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=5)
+        response.raise_for_status()  # Raise error for failed responses (e.g., 404, 500)
         data = response.json()
         
         items = data.get("items", [])
@@ -27,24 +30,31 @@ def fetch_books_data(query: str, limit: int = 5) -> List[Dict]:
         formatted_results = []
         for item in items:
             volume_info = item.get("volumeInfo", {})
+            snippet = volume_info.get("description", "")
+
             formatted_results.append({
-                "title": volume_info.get("title", ""),
+                "title": volume_info.get("title", "Unknown Title"),
                 "link": volume_info.get("infoLink", ""),
-                "snippet": volume_info.get("description", "")[:200] + "..." if volume_info.get("description") else "",
+                "snippet": (snippet[:200] + "...") if snippet else "No description available.",
                 "source": "books",
                 "source_name": "Google Books",
-                "authors": volume_info.get("authors", []),
-                "published_date": volume_info.get("publishedDate", "")
+                "authors": volume_info.get("authors", ["Unknown Author"]),
+                "published_date": volume_info.get("publishedDate", "Unknown Date")
             })
         
         return formatted_results
     
-    except Exception as e:
-        print(f"Error fetching books data: {str(e)}")
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Error fetching books data: {str(e)}")
         return []
 
 def fetch_movies_data(query: str, limit: int = 5) -> List[Dict]:
     """Fetch movie recommendations from TMDB API."""
+    
+    if not MOVIES_API_KEY:
+        print("⚠️ Missing TMDB API Key. Skipping movie fetch.")
+        return []
+    
     url = "https://api.themoviedb.org/3/search/movie"
     
     params = {
@@ -54,66 +64,66 @@ def fetch_movies_data(query: str, limit: int = 5) -> List[Dict]:
     }
     
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=5)
+        response.raise_for_status()
         data = response.json()
         
         results = data.get("results", [])[:limit]
         
         formatted_results = []
         for result in results:
+            snippet = result.get("overview", "")
+
             formatted_results.append({
-                "title": result.get("title", ""),
+                "title": result.get("title", "Unknown Title"),
                 "link": f"https://www.themoviedb.org/movie/{result.get('id')}" if result.get("id") else "",
-                "snippet": result.get("overview", "")[:200] + "..." if result.get("overview") else "",
+                "snippet": (snippet[:200] + "...") if snippet else "No overview available.",
                 "source": "movies",
                 "source_name": "TMDB",
-                "release_date": result.get("release_date", ""),
+                "release_date": result.get("release_date", "Unknown Date"),
                 "vote_average": result.get("vote_average", 0)
             })
         
         return formatted_results
     
-    except Exception as e:
-        print(f"Error fetching movies data: {str(e)}")
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Error fetching movies data: {str(e)}")
         return []
 
-# Add more interest-based data sources as needed
+# ✅ Placeholder for additional interest sources (e.g., tech news)
 def fetch_tech_news(query: str, limit: int = 5) -> List[Dict]:
     """Fetch technology news articles."""
-    # Implementation similar to above
+    # Implementation similar to above (e.g., using NewsAPI or web scraping)
     pass
 
+# ✅ Test function for fetching books and movies
 def test_interest_sources():
-    # Test Google Books API
-    print("=== Testing Google Books API ===")
-    books_query = "Artificial Intelligence"
+    """Test book and movie data fetching functions."""
     
-    print(f"Fetching book data for query: '{books_query}'")
+    # ✅ Test Google Books API
+    print("\n=== 📚 Testing Google Books API ===")
+    books_query = "Artificial Intelligence"
     books_results = fetch_books_data(books_query, limit=3)
     
-    print(f"Found {len(books_results)} books")
+    print(f"✅ Found {len(books_results)} books for query: '{books_query}'")
     
-    # Print book results
     for i, result in enumerate(books_results, 1):
-        print(f"\n--- Book {i} ---")
+        print(f"\n--- 📖 Book {i} ---")
         print(f"Title: {result.get('title')}")
         print(f"Authors: {', '.join(result.get('authors', []))}")
         print(f"Published: {result.get('published_date')}")
         print(f"Link: {result.get('link')}")
         print(f"Snippet: {result.get('snippet')}")
-    
-    # Test TMDB API
-    print("\n\n=== Testing TMDB API ===")
+
+    # ✅ Test TMDB API
+    print("\n=== 🎬 Testing TMDB API ===")
     movies_query = "Science Fiction"
-    
-    print(f"Fetching movie data for query: '{movies_query}'")
     movies_results = fetch_movies_data(movies_query, limit=3)
     
-    print(f"Found {len(movies_results)} movies")
+    print(f"✅ Found {len(movies_results)} movies for query: '{movies_query}'")
     
-    # Print movie results
     for i, result in enumerate(movies_results, 1):
-        print(f"\n--- Movie {i} ---")
+        print(f"\n--- 🎥 Movie {i} ---")
         print(f"Title: {result.get('title')}")
         print(f"Release Date: {result.get('release_date')}")
         print(f"Rating: {result.get('vote_average')}/10")
