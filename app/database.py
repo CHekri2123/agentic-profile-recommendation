@@ -1,23 +1,21 @@
 import pymongo
 import redis
 import json
-import ssl
 import logging
 import streamlit as st
-from functools import lru_cache
 
 # ✅ Load MongoDB & Redis Config from Streamlit Secrets
 MONGO_URI = st.secrets["MONGO_URI"]
 DATABASE_NAME = st.secrets["DATABASE_NAME"]
-REDIS_URL = st.secrets["REDIS_URL"]
+
+REDIS_HOST = st.secrets["REDIS_HOST"]
+REDIS_PORT = int(st.secrets["REDIS_PORT"])
+REDIS_PASSWORD = st.secrets["REDIS_PASSWORD"]
 
 if not MONGO_URI:
     raise ValueError("❌ MONGO_URI is missing from Streamlit secrets!")
 
-if not REDIS_URL:
-    raise ValueError("❌ REDIS_URL is missing from Streamlit secrets!")
-
-# ✅ Initialize MongoDB Client with TLS 1.2 Fix
+# ✅ Initialize MongoDB Client with Proper TLS
 try:
     client = pymongo.MongoClient(
         MONGO_URI,
@@ -25,21 +23,26 @@ try:
         minPoolSize=10,
         retryWrites=True,
         serverSelectionTimeoutMS=5000,
-        tlsAllowInvalidCertificates=True  # 👈 Add this line
+        tls=True  # ✅ Secure TLS connection
     )
-
     client.admin.command("ping")
     print("✅ Connected to MongoDB successfully!")
 except pymongo.errors.ServerSelectionTimeoutError as e:
-    print(f"❌ MongoDB Server Selection Timeout: {e}")
+    print(f"❌ MongoDB Timeout: {e}")
     raise e
 except pymongo.errors.ConnectionFailure as e:
     print(f"❌ Could not connect to MongoDB: {e}")
     raise e
 
-# ✅ Initialize Redis Client
+# ✅ Initialize Redis Client Properly
 try:
-    redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+    redis_client = redis.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        password=REDIS_PASSWORD,
+        decode_responses=True
+    )
+    redis_client.ping()  # Test connection
     print("✅ Connected to Redis successfully!")
 except Exception as e:
     print(f"❌ Could not connect to Redis: {e}")
@@ -51,7 +54,6 @@ users_collection = db["users"]
 
 # ✅ Cache expiration time in seconds
 CACHE_EXPIRATION = 300  # 5 minutes
-
 
 def save_user_profile(user_profile: dict):
     """
@@ -87,7 +89,6 @@ def save_user_profile(user_profile: dict):
     except pymongo.errors.PyMongoError as e:
         print(f"❌ Error saving/updating user profile: {e}")
         return False
-
 
 def get_user_profile(user_id: str):
     """
@@ -128,7 +129,6 @@ def get_user_profile(user_id: str):
         print(f"❌ Error retrieving user profile: {e}")
         return None
 
-
 def delete_user_profile(user_id: str):
     """
     Delete a user profile from MongoDB and Redis.
@@ -157,7 +157,6 @@ def delete_user_profile(user_id: str):
         print(f"❌ Error deleting user profile: {e}")
         return False
 
-
 def list_all_users():
     """
     List all users in the database.
@@ -178,7 +177,6 @@ def list_all_users():
         print(f"❌ Error listing all users: {e}")
         return []
 
-
 def get_db_client():
     """
     Returns the MongoDB client for dependency injection.
@@ -190,4 +188,4 @@ def get_db_client():
         client.admin.command("ping")
         return client
     except pymongo.errors.ConnectionFailure:
-        return pymongo.MongoClient(MONGO_URI, tls=True, tlsAllowInvalidCertificates=True)
+        return pymongo.MongoClient(MONGO_URI, tls=True)
