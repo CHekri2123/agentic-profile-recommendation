@@ -2,28 +2,31 @@ from typing import List, Dict
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from datetime import datetime
+from dateutil import parser
+import logging
 
-def calculate_relevance_scores(results: List[Dict], user_profile: Dict) -> List[Dict]:
+logging.basicConfig(level=logging.INFO)
+
+def calculate_relevance_scores(jobs: List[Dict], user_profile: Dict) -> List[Dict]:
     """
-    Computes relevance scores using TF-IDF similarity between user profile and recommendation data.
+    Computes relevance scores using TF-IDF similarity between user profile and job listings.
     
     Args:
-        results: List of recommendation results (each containing 'title' and 'snippet').
-        user_profile: Dictionary containing user interests, skills, and preferences.
+        jobs: List of job listings (each containing 'title', 'description', etc.).
+        user_profile: Dictionary containing user skills, experience, and preferences.
 
     Returns:
-        List of results sorted by computed relevance scores.
+        List of jobs sorted by computed relevance scores.
     """
     
-    # ✅ Return empty list if no results or user profile is missing
-    if not results or not user_profile:
-        return results
+    # ✅ Return empty list if no jobs or user profile is missing
+    if not jobs or not user_profile:
+        return jobs
     
     # ✅ Extract key terms from user profile
     profile_terms = []
     
-    # Add user interests, skills, and industries
-    profile_terms.extend(user_profile.get("interests", []) or [])
+    # Add user skills, industries, and role preferences
     profile_terms.extend(user_profile.get("demographics", {}).get("skills", []) or [])
     profile_terms.extend(user_profile.get("demographics", {}).get("industries", []) or [])
     
@@ -35,23 +38,24 @@ def calculate_relevance_scores(results: List[Dict], user_profile: Dict) -> List[
     # ✅ Create a single profile query string
     profile_query = " ".join(profile_terms).lower().strip()
     
-    # ✅ Prepare documents from recommendation results
-    documents = [
-        (result.get("title", "") + " " + result.get("snippet", "")).lower().strip()
-        for result in results
-    ]
+    # 1️⃣ Ensure Profile Query Exists Before TF-IDF
+    if not profile_query:
+        for job in jobs:
+            job["relevance_score"] = 0
+        return jobs
     
-    # ✅ Return results with zero scores if there's no meaningful user profile or documents
-    if not documents or not profile_query:
-        for result in results:
-            result["relevance_score"] = 0
-        return results
+    # ✅ Prepare documents from job listings
+    documents = [
+        (job.get("title", "") + " " + job.get("description", "") + " " + 
+         job.get("company", "") + " " + job.get("location", "")).lower().strip()
+        for job in jobs
+    ]
 
     # ✅ Use TF-IDF Vectorizer (English stopwords removed for better relevance)
     vectorizer = TfidfVectorizer(stop_words="english")
     
     try:
-        # ✅ Fit TF-IDF on combined documents (results + user profile)
+        # ✅ Fit TF-IDF on combined documents (jobs + user profile)
         all_docs = documents + [profile_query]
         tfidf_matrix = vectorizer.fit_transform(all_docs)
         
@@ -73,36 +77,63 @@ def calculate_relevance_scores(results: List[Dict], user_profile: Dict) -> List[
         # ✅ Scale cosine similarity to a 0-100 range
         scaled_scores = (similarities * 100).astype(float)
         
-        # ✅ Apply source-specific relevance boosts
-        for i, result in enumerate(results):
+        # ✅ Apply job-specific relevance boosts
+        for i, job in enumerate(jobs):
             score = scaled_scores[i]
+            original_score = score
 
-            if result.get("source") == "books" and "books" in user_profile.get("interests", []):
-                score *= 1.5  # Boost book-related results
-            elif result.get("source") == "movies" and "movies" in user_profile.get("interests", []):
-                score *= 1.5  # Boost movie-related results
+            # ✅ Boost jobs that match user's preferred location
+            user_location = user_profile.get("preferences", {}).get("location", "").lower()
+            job_location = job.get("location", "").lower()
+            if user_location and user_location in job_location:
+                score += np.log1p(score * 0.3)
+                
+            # ✅ Boost jobs that match user's remote/hybrid preferences
+            if user_profile.get("preferences", {}).get("remote") is True and "remote" in job_location:
+                score += np.log1p(score * 0.4)
+            elif user_profile.get("preferences", {}).get("hybrid") is True and "hybrid" in job_location:
+                score += np.log1p(score * 0.3)
             
-            # ✅ Apply recency boost (if applicable)
-            published_date = result.get("published_date") or result.get("release_date")
-            if published_date:
+            # ✅ Boost jobs from preferred companies
+            preferred_companies = user_profile.get("preferences", {}).get("companies", [])
+            job_company = job.get("company", "").lower()
+            if any(company.lower() in job_company for company in preferred_companies):
+                score += np.log1p(score * 0.5)
+            
+            # ✅ Apply recency boost
+            posted_date = job.get("posted_date")
+            if posted_date:
                 try:
-                    pub_date = datetime.strptime(published_date, "%Y-%m-%d")  # Ensure date format is YYYY-MM-DD
+                    # 3️⃣ Standardize Date Parsing
+                    pub_date = parser.parse(posted_date)
                     days_old = (datetime.utcnow() - pub_date).days
-                    if days_old < 30:  # Give higher score to recent content
-                        score *= 1.2
-                except Exception:
-                    pass  # Ignore errors if date format is incorrect
+                    if days_old < 7:  # Give higher score to very recent jobs
+                        score += np.log1p(score * 0.3)
+                    elif days_old < 30:  # Give higher score to recent jobs
+                        score += np.log1p(score * 0.15)
+                except Exception as e:
+                    logging.warning(f"Error parsing date: {e}")
+            
+            # ✅ Apply source-specific boosts
+            source = job.get("source", "").lower()
+            if source == "indeed":
+                score += np.log1p(score * 0.05)
+            elif source == "linkedin":
+                score += np.log1p(score * 0.1)
             
             # ✅ Assign final rounded score
-            result["relevance_score"] = round(score, 2)
+            job["relevance_score"] = round(score, 2)
+            
+            # 4️⃣ Add Debug Logging for Scores
+            logging.info(f"Job: {job['title']} | Base Score: {original_score:.2f} | Final Score: {job['relevance_score']}")
 
     except Exception as e:
-        print(f"⚠️ Error calculating TF-IDF relevance scores: {e}")
+        logging.error(f"⚠️ Error calculating TF-IDF relevance scores: {e}")
         # ✅ Fallback: Assign default zero scores
-        for result in results:
-            result["relevance_score"] = 0
+        for job in jobs:
+            job["relevance_score"] = 0
 
-    # ✅ Sort results by computed relevance scores (highest first)
-    results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+    # ✅ Sort jobs by computed relevance scores (highest first)
+    jobs.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
     
-    return results
+    return jobs

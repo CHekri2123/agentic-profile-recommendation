@@ -1,22 +1,23 @@
-import streamlit as st
 import pymongo
 import redis
 import json
 import ssl
+import logging
+import streamlit as st
 from functools import lru_cache
 
-# Load MongoDB & Redis Config from Streamlit Secrets
+# ✅ Load MongoDB & Redis Config from Streamlit Secrets
 MONGO_URI = st.secrets["MONGO_URI"]
 DATABASE_NAME = st.secrets["DATABASE_NAME"]
 REDIS_URL = st.secrets["REDIS_URL"]
 
 if not MONGO_URI:
-    raise ValueError("❌ MONGO_URI is not set in Streamlit secrets!")
+    raise ValueError("❌ MONGO_URI is missing from Streamlit secrets!")
 
 if not REDIS_URL:
-    raise ValueError("❌ REDIS_URL is not set in Streamlit secrets!")
+    raise ValueError("❌ REDIS_URL is missing from Streamlit secrets!")
 
-# Initialize MongoDB Client with TLS 1.2 Fix
+# ✅ Initialize MongoDB Client with TLS 1.2 Fix
 try:
     client = pymongo.MongoClient(
         MONGO_URI,
@@ -36,7 +37,7 @@ except pymongo.errors.ConnectionFailure as e:
     print(f"❌ Could not connect to MongoDB: {e}")
     raise e
 
-# Initialize Redis Client
+# ✅ Initialize Redis Client
 try:
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     print("✅ Connected to Redis successfully!")
@@ -44,11 +45,11 @@ except Exception as e:
     print(f"❌ Could not connect to Redis: {e}")
     redis_client = None  # Fallback if Redis is unavailable
 
-# Define database and collections
+# ✅ Define database and collections
 db = client[DATABASE_NAME]
 users_collection = db["users"]
 
-# Cache expiration time in seconds
+# ✅ Cache expiration time in seconds
 CACHE_EXPIRATION = 300  # 5 minutes
 
 
@@ -74,7 +75,7 @@ def save_user_profile(user_profile: dict):
         else:
             print(f"✅ Updated user: {user_profile['user_id']}")
 
-        # Update Redis cache
+        # ✅ Update Redis cache
         if redis_client:
             redis_client.setex(
                 f"user_profile:{user_profile['user_id']}",
@@ -105,13 +106,13 @@ def get_user_profile(user_id: str):
                 print(f"✅ Cache hit: Retrieved user {user_id} from Redis.")
                 return json.loads(cached_profile)
 
-        # If not found in Redis, fetch from MongoDB
+        # ✅ If not found in Redis, fetch from MongoDB
         user_profile = users_collection.find_one({"user_id": user_id}, {"_id": 0})
 
         if user_profile:
             print(f"✅ Retrieved user profile from MongoDB for ID: {user_id}")
 
-            # Store in Redis for future requests
+            # ✅ Store in Redis for future requests
             if redis_client:
                 redis_client.setex(
                     f"user_profile:{user_id}",
@@ -144,7 +145,7 @@ def delete_user_profile(user_id: str):
         if result.deleted_count > 0:
             print(f"✅ Deleted user profile for ID: {user_id}")
 
-            # Remove from Redis cache
+            # ✅ Remove from Redis cache
             if redis_client:
                 redis_client.delete(f"user_profile:{user_id}")
 

@@ -45,7 +45,8 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Pydantic Model for input validation
 class UserQuery(BaseModel):
-    query: str
+    query: str  # Explicitly defined
+
 
 @app.post("/parse-query/")
 def parse_query(user_input: UserQuery):
@@ -55,35 +56,41 @@ def parse_query(user_input: UserQuery):
     if "error" in parsed_data:
         raise HTTPException(status_code=400, detail=parsed_data["error"])
 
-    # Save user profile to MongoDB
     if not save_user_profile(parsed_data):
         raise HTTPException(status_code=500, detail="Failed to save user profile.")
 
-    # Clear cache after updating the profile
-    clear_user_cache(parsed_data["user_id"])
+    # ✅ Clear cache after updating the user profile
+    cache_clear_response = clear_user_cache(parsed_data["user_id"])
 
-    return {"message": "✅ User profile saved/updated successfully!", "profile": parsed_data}
+    return {
+        "message": "✅ User profile saved/updated successfully!",
+        "profile": parsed_data,
+        "cache_clear_status": cache_clear_response
+    }
+
 
 @lru_cache(maxsize=100)
 def get_cached_user_profile(user_id: str):
     """Cache user profiles to reduce database queries."""
     return get_user_profile(user_id)
 
+
 @app.get("/get-user/{user_id}")
 def get_user(user_id: str):
     """Fetches user profile from MongoDB with caching."""
     user_profile = get_cached_user_profile(user_id)
-    
+
     if not user_profile:
         raise HTTPException(status_code=404, detail="User not found")
 
     return user_profile
 
+
 @app.get("/recommendations/{user_id}")
 def get_recommendations(user_id: str, limit: int = 10):
     """Generates personalized recommendations for a user with caching."""
     cache_key = f"recommendations:{user_id}:{limit}"
-    
+
     # Try to get from cache
     if redis_available:
         cached_data = redis_client.get(cache_key)
@@ -91,22 +98,23 @@ def get_recommendations(user_id: str, limit: int = 10):
             return json.loads(cached_data)
     elif cache_key in recommendation_cache:
         return recommendation_cache[cache_key]
-    
+
     # Generate recommendations if not in cache
     recommendations = generate_recommendations(user_id, limit)
-    
+
     if not recommendations:
         raise HTTPException(status_code=404, detail="No recommendations found or user not found")
-    
+
     # Cache the result
     result = {"user_id": user_id, "recommendations": recommendations}
-    
+
     if redis_available:
         redis_client.setex(cache_key, CACHE_EXPIRATION, json.dumps(result))
     else:
         recommendation_cache[cache_key] = result
-    
+
     return result
+
 
 @app.get("/health")
 def health_check():
@@ -115,6 +123,7 @@ def health_check():
         "status": "healthy",
         "caching": "redis" if redis_available else "in-memory"
     }
+
 
 @app.post("/clear-cache/{user_id}")
 def clear_user_cache(user_id: str):
@@ -128,11 +137,12 @@ def clear_user_cache(user_id: str):
         keys_to_delete = [k for k in recommendation_cache.keys() if k.startswith(f"recommendations:{user_id}:")]
         for key in keys_to_delete:
             del recommendation_cache[key]
-    
+
     # Clear user profile cache
     get_cached_user_profile.cache_clear()
-    
+
     return {"message": f"✅ Cache cleared for user {user_id}"}
+
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
